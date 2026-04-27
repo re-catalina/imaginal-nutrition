@@ -16,7 +16,8 @@ function multiplyMacros(macros: MacroEstimate, multiplier: number): MacroEstimat
     calories: Math.round(macros.calories * multiplier),
     proteinGrams: Number((macros.proteinGrams * multiplier).toFixed(1)),
     carbsGrams: Number((macros.carbsGrams * multiplier).toFixed(1)),
-    fatGrams: Number((macros.fatGrams * multiplier).toFixed(1))
+    fatGrams: Number((macros.fatGrams * multiplier).toFixed(1)),
+    fiberGrams: Number((macros.fiberGrams * multiplier).toFixed(1))
   };
 }
 

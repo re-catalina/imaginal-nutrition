@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+
 import { prisma } from "@/lib/prisma";
 
 export async function GET(req: Request) {
@@ -7,12 +8,7 @@ export async function GET(req: Request) {
   const start = new Date();
   start.setUTCDate(start.getUTCDate() - days);
 
-  const [eventsByName, avgConfidence, lowConfidenceCount] = await Promise.all([
-    prisma.metricEvent.groupBy({
-      by: ["eventName"],
-      _count: { eventName: true },
-      where: { createdAt: { gte: start } }
-    }),
+  const [avgConfidence, lowConfidenceCount] = await Promise.all([
     prisma.foodEntry.aggregate({
       _avg: { confidence: true },
       where: { createdAt: { gte: start } }
@@ -24,7 +20,7 @@ export async function GET(req: Request) {
 
   return NextResponse.json({
     dateWindowDays: days,
-    eventCounts: eventsByName.map((entry) => ({ name: entry.eventName, count: entry._count.eventName })),
+    legacyMetricEventsNote: "MetricEvent model removed — use structured logging or analytics instead.",
     parsingQuality: {
       averageConfidence: Number((avgConfidence._avg.confidence ?? 0).toFixed(2)),
       lowConfidenceEntries: lowConfidenceCount

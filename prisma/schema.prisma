@@ -7,45 +7,266 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+/// Web: meal planner can manage household; contributor is recipe-focused (per design doc).
+enum HouseholdRole {
+  MEAL_PLANNER
+  CONTRIBUTOR
+}
+
 model User {
-  id               String             @id @default(cuid())
-  email            String             @unique
-  name             String?
-  timezone         String             @default("UTC")
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
-  bodyMetrics      BodyMetric[]
-  calorieTargets   CalorieTarget[]
+  id        String    @id @default(cuid())
+  /// Stable login handle for credentials; reserved for Google `sub` swap later via account linking strategy.
+  username  String?   @unique
+  email     String?   @unique
+  name      String?
+  image     String?
+  timezone  String    @default("UTC")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  householdId          String?
+  household            Household?          @relation(fields: [householdId], references: [id])
+  householdRole        HouseholdRole       @default(MEAL_PLANNER)
+  onboardingComplete   Boolean             @default(false)
+  onboardingStep       Int                 @default(0)
+  /// Nemo coaching tone key, e.g. SUPPORTIVE | DIRECT | ANALYTICAL | PLAYFUL
+  nemoPersonality      String?
+  notifyChannel        String              @default("in_app")
+  weeklyPlanningDay    String?
+  checkInTime          String?
+  fitnessGoal          String?
+  groceryStoresNote    String?
+  instagramNote        String?
+
+  healthProfile    HealthProfile?
+  wellnessMetrics  WellnessMetric[]
+  foodPreferences  FoodPreference[]
   foodEntries      FoodEntry[]
   dailySummaries   DailySummary[]
-  events           Event[]
-  menuAnalyses     MenuAnalysis[]
-  coachInteractions CoachInteraction[]
-  metricEvents     MetricEvent[]
+  plannedMeals     PlannedMeal[]
+  nemoConversation NemoConversation?
+  notifications    Notification[]
 }
 
-model BodyMetric {
+model Household {
+  id             String         @id @default(cuid())
+  name           String
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  members        User[]
+  dependents     Dependent[]
+  recipes        Recipe[]
+  groceryLists   GroceryList[]
+  mealPlans      MealPlan[]
+  recipeFolders  RecipeFolder[]
+  adHocCarts     AdHocCart[]
+}
+
+model Dependent {
+  id           String    @id @default(cuid())
+  householdId  String
+  displayName  String
+  household    Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+}
+
+model RecipeFolder {
+  id          String             @id @default(cuid())
+  householdId String
+  name        String
+  color       String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  household   Household          @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  items       RecipeFolderItem[]
+
+  @@index([householdId])
+}
+
+model RecipeFolderItem {
+  id       String       @id @default(cuid())
+  folderId String
+  recipeId String
+  folder   RecipeFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  recipe   Recipe       @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@unique([folderId, recipeId])
+}
+
+model Recipe {
+  id              String             @id @default(cuid())
+  householdId     String
+  title           String
+  servings        Int                @default(4)
+  caloriesPerServ Int?
+  proteinPerServ  Float?
+  carbsPerServ    Float?
+  fatPerServ      Float?
+  ingredientsJson Json
+  instructions    String?
+  sourceUrl       String?
+  imageUrl        String?
+  prepMinutes     Int?
+  prepNotes       String?
+  tags            String[]           @default([])
+  isStaple        Boolean            @default(false)
+  deletedAt       DateTime?
+  fromInstagram   Boolean            @default(false)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  household       Household          @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  plannedMeals    PlannedMeal[]
+  folderItems     RecipeFolderItem[]
+  stapleRotations StapleRotation[]
+  cartItems       AdHocCartItem[]
+
+  @@index([householdId])
+}
+
+model AdHocCart {
+  id          String          @id @default(cuid())
+  householdId String
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  household   Household       @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  items       AdHocCartItem[]
+
+  @@index([householdId])
+}
+
+model AdHocCartItem {
+  id       String    @id @default(cuid())
+  cartId   String
+  recipeId String
+  servings Int       @default(2)
+  cart     AdHocCart @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  recipe   Recipe    @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@index([cartId])
+  @@index([recipeId])
+}
+
+model StapleRotation {
   id            String   @id @default(cuid())
-  userId        String
-  weightKg      Float
-  heightCm      Float
-  age           Int
-  sex           String
-  activityLevel String
-  goalType      String
-  createdAt     DateTime @default(now())
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipeId      String
+  rotationGroup String
+  variants      Json
+  recipe        Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@index([recipeId])
 }
 
-model CalorieTarget {
-  id              String   @id @default(cuid())
-  userId          String
-  bmr             Float
-  tdee            Float
-  targetCalories  Int
-  strategyPercent Float
-  createdAt       DateTime @default(now())
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+model Notification {
+  id           String   @id @default(cuid())
+  userId       String
+  channel      String
+  scheduledFor DateTime
+  type         String
+  sent         Boolean  @default(false)
+  payload      Json?
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, scheduledFor])
+}
+
+model GroceryList {
+  id           String    @id @default(cuid())
+  householdId  String
+  mealPlanId   String?
+  label        String    @default("This week")
+  sectionsJson Json
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  household    Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  mealPlan     MealPlan? @relation(fields: [mealPlanId], references: [id], onDelete: SetNull)
+
+  @@index([householdId])
+  @@index([mealPlanId])
+}
+
+model HealthProfile {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  caloricTarget     Int?
+  proteinTarget     Int?
+  carbTarget        Int?
+  fatTarget         Int?
+  fiberTarget       Int?
+  fitnessGoal       String?
+  activityLevel     String?
+  preferredCookTime Int?
+  weeklyBudget      Float?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model WellnessMetric {
+  id             String   @id @default(cuid())
+  userId         String
+  metricType     String
+  value          Float
+  unit           String?
+  recordedAt     DateTime @default(now())
+  isUserReported Boolean  @default(true)
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, metricType])
+}
+
+model FoodPreference {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String
+  foodName  String
+  notes     String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model MealPlan {
+  id             String        @id @default(cuid())
+  householdId    String
+  weekStartDate  DateTime
+  generatedAt    DateTime      @default(now())
+  lockedAt       DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  household      Household     @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  plannedMeals   PlannedMeal[]
+  groceryLists   GroceryList[]
+
+  @@unique([householdId, weekStartDate])
+}
+
+model PlannedMeal {
+  id           String    @id @default(cuid())
+  mealPlanId   String
+  userId       String
+  date         DateTime
+  mealType     String
+  recipeId     String?
+  isEatingOut  Boolean   @default(false)
+  isSkipped    Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  mealPlan     MealPlan  @relation(fields: [mealPlanId], references: [id], onDelete: Cascade)
+  recipe       Recipe?   @relation(fields: [recipeId], references: [id], onDelete: SetNull)
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([mealPlanId])
+  @@index([userId])
+}
+
+model NemoConversation {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  messages  Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model FoodEntry {
@@ -62,76 +283,33 @@ model FoodEntry {
 }
 
 model FoodEntryItem {
-  id            String    @id @default(cuid())
-  foodEntryId   String
-  sourceFoodId  String
-  foodName      String
-  quantity      String
-  calories      Int
-  proteinGrams  Float
-  carbsGrams    Float
-  fatGrams      Float
-  confidence    Float
-  foodEntry     FoodEntry @relation(fields: [foodEntryId], references: [id], onDelete: Cascade)
+  id           String    @id @default(cuid())
+  foodEntryId  String
+  sourceFoodId String
+  foodName     String
+  quantity     String
+  calories     Int
+  proteinGrams Float
+  carbsGrams   Float
+  fatGrams     Float
+  fiberGrams   Float    @default(0)
+  confidence   Float
+  foodEntry    FoodEntry @relation(fields: [foodEntryId], references: [id], onDelete: Cascade)
 }
 
 model DailySummary {
-  id               String   @id @default(cuid())
-  userId           String
-  date             DateTime
-  calorieTarget    Int
-  consumedCalories Int
-  proteinGrams     Float    @default(0)
-  carbsGrams       Float    @default(0)
-  fatGrams         Float    @default(0)
-  remainingCalories Int
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                  String   @id @default(cuid())
+  userId              String
+  date                DateTime
+  calorieTarget       Int
+  consumedCalories    Int
+  proteinGrams        Float    @default(0)
+  carbsGrams          Float    @default(0)
+  fatGrams            Float    @default(0)
+  remainingCalories   Int
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, date])
-}
-
-model Event {
-  id               String   @id @default(cuid())
-  userId           String
-  restaurantName   String
-  plannedItemsText String
-  plannedDrinks    String?
-  estimatedCalories Int
-  guidanceSummary  String
-  createdAt        DateTime @default(now())
-  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model MenuAnalysis {
-  id               String   @id @default(cuid())
-  userId           String
-  inputType        String
-  inputText        String?
-  imageUrl         String?
-  parsedMenuJson   Json
-  recommendationsJson Json
-  confidence       Float
-  createdAt        DateTime @default(now())
-  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model CoachInteraction {
-  id            String   @id @default(cuid())
-  userId        String
-  prompt        String
-  response      String
-  contextJson   Json?
-  createdAt     DateTime @default(now())
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model MetricEvent {
-  id         String   @id @default(cuid())
-  userId     String?
-  eventName  String
-  properties Json?
-  createdAt  DateTime @default(now())
-  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 }

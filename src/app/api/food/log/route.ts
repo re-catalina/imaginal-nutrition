@@ -2,14 +2,20 @@ import { NextResponse } from "next/server";
 import { parseFoodLog } from "@/lib/food-logging";
 import { trackEvent } from "@/lib/observability";
 import { prisma } from "@/lib/prisma";
-import { foodLogSchema } from "@/lib/validation";
+import { requireUserId } from "@/lib/require-user";
+import { foodLogInputSchema } from "@/lib/validation";
 
 export async function GET(req: Request) {
+  const auth = await requireUserId();
+  if (!auth.ok) {
+    return auth.response;
+  }
+
   const { searchParams } = new URL(req.url);
-  const userId = searchParams.get("userId");
+  const userId = auth.userId;
   const date = searchParams.get("date");
-  if (!userId || !date) {
-    return NextResponse.json({ error: "userId and date are required" }, { status: 400 });
+  if (!date) {
+    return NextResponse.json({ error: "date is required" }, { status: 400 });
   }
 
   const selectedDate = new Date(`${date}T00:00:00.000Z`);
@@ -32,13 +38,19 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const auth = await requireUserId();
+  if (!auth.ok) {
+    return auth.response;
+  }
+
   const body = await req.json();
-  const parsedBody = foodLogSchema.safeParse(body);
+  const parsedBody = foodLogInputSchema.safeParse(body);
   if (!parsedBody.success) {
     return NextResponse.json({ error: parsedBody.error.flatten() }, { status: 400 });
   }
 
-  const { userId, rawText, mealType, eatenAt } = parsedBody.data;
+  const userId = auth.userId;
+  const { rawText, mealType, eatenAt } = parsedBody.data;
   const parsedFood = parseFoodLog(rawText);
 
   if (parsedFood.items.length === 0) {
@@ -61,6 +73,7 @@ export async function POST(req: Request) {
           proteinGrams: item.macros.proteinGrams,
           carbsGrams: item.macros.carbsGrams,
           fatGrams: item.macros.fatGrams,
+          fiberGrams: item.macros.fiberGrams,
           confidence: item.confidence
         }))
       }

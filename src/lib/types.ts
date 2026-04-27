@@ -16,4 +16,5 @@ export type MacroEstimate = {
   proteinGrams: number;
   carbsGrams: number;
   fatGrams: number;
+  fiberGrams: number;
 };

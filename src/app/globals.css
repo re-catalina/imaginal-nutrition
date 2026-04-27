@@ -3,5 +3,34 @@
 @tailwind utilities;
 
 body {
-  @apply bg-slate-950 text-slate-100 antialiased;
+  @apply bg-stone-bg text-forest antialiased;
+}
+
+.page-fade-in {
+  animation: page-fade-in 200ms ease-out both;
+}
+
+@keyframes page-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.card-hover {
+  @apply transition-colors duration-ui;
+}
+
+.card-hover:hover {
+  @apply border-tan;
+}
+
+@layer components {
+  .field-input {
+    @apply mt-2 w-full rounded-2xl border border-border bg-stone-bg px-4 py-3 text-forest outline-none ring-fern focus:ring-2;
+  }
 }
