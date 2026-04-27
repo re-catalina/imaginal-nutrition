@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 
 type FolderPreview = { id: string; name: string; color: string | null };
@@ -88,18 +89,23 @@ export default function RecipesPage() {
           ) : (
             <ul className="space-y-4">
               {recipes.map((recipe) => (
-                <li key={recipe.id} className="rounded-3xl border border-border bg-white p-5 shadow-sm shadow-black/5">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
+                <li key={recipe.id}>
+                  <Link
+                    href={`/recipes/${recipe.id}`}
+                    className="card-hover flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-border bg-white p-5 shadow-sm shadow-black/5 transition-transform duration-ui hover:-translate-y-0.5"
+                  >
                     <div>
                       <p className="text-lg font-semibold text-forest">{recipe.title}</p>
                       <p className="text-xs uppercase tracking-[0.2em] text-tan">
                         {folderSummary(recipe)} · serves {recipe.servings}
                       </p>
                     </div>
-                    {recipe.fromInstagram && (
+                    {recipe.fromInstagram ? (
                       <span className="rounded-full bg-stone-bg px-3 py-1 text-xs font-semibold text-forest">Instagram</span>
+                    ) : (
+                      <span className="text-xs font-semibold text-tan">View →</span>
                     )}
-                  </div>
+                  </Link>
                 </li>
               ))}
             </ul>

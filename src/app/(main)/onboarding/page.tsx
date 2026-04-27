@@ -1,7 +1,9 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+
+import { PageBackButton } from "@/components/PageBackButton";
 
 const PERSONALITIES = [
   {
@@ -24,17 +26,40 @@ const PERSONALITIES = [
     title: "Playful",
     sample: "Kitchen dance break after meal prep? Optional. Hydration before snacks? Mandatory."
   }
-];
+] as const;
+
+type MeJson = {
+  onboardingComplete?: boolean;
+  onboardingStep?: number;
+  name?: string | null;
+  household?: { name: string } | null;
+  householdRole?: string;
+  nemoPersonality?: string | null;
+  notifyChannel?: string;
+  weeklyPlanningDay?: string | null;
+  checkInTime?: string | null;
+  fitnessGoal?: string | null;
+  groceryStoresNote?: string | null;
+  instagramNote?: string | null;
+};
+
+/** DB uses 0 = pre-welcome; each completed screen advances `onboardingStep` to the next UI step index. */
+function uiStepFromDb(dbStep: number): number {
+  if (dbStep <= 0) return 1;
+  return Math.min(Math.max(dbStep, 1), 6);
+}
 
 export default function OnboardingPage() {
   const router = useRouter();
+  const [hydrated, setHydrated] = useState(false);
   const [step, setStep] = useState(1);
   const [pending, setPending] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const [householdName, setHouseholdName] = useState("");
   const [firstName, setFirstName] = useState("");
   const [role, setRole] = useState<"MEAL_PLANNER" | "CONTRIBUTOR">("MEAL_PLANNER");
-  const [personality, setPersonality] = useState(PERSONALITIES[0].id);
+  const [personality, setPersonality] = useState<string>(PERSONALITIES[0].id);
   const [groceryStoresNote, setGroceryStoresNote] = useState("");
   const [instagramNote, setInstagramNote] = useState("");
   const [fitnessGoal, setFitnessGoal] = useState("");
@@ -44,7 +69,61 @@ export default function OnboardingPage() {
 
   const progress = useMemo(() => Math.round((step / 6) * 100), [step]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const response = await fetch("/api/me");
+        if (!response.ok) return;
+        const me = (await response.json()) as MeJson;
+        if (cancelled) return;
+
+        if (me.onboardingComplete) {
+          router.replace("/dashboard");
+          return;
+        }
+
+        setStep(uiStepFromDb(me.onboardingStep ?? 0));
+        if (me.name) setFirstName(me.name);
+        if (me.household?.name) setHouseholdName(me.household.name);
+        if (me.householdRole === "CONTRIBUTOR" || me.householdRole === "MEAL_PLANNER") {
+          setRole(me.householdRole);
+        }
+        if (me.nemoPersonality && PERSONALITIES.some((p) => p.id === me.nemoPersonality)) {
+          setPersonality(me.nemoPersonality);
+        }
+        if (me.groceryStoresNote !== undefined && me.groceryStoresNote !== null) {
+          setGroceryStoresNote(me.groceryStoresNote);
+        }
+        if (me.instagramNote !== undefined && me.instagramNote !== null) {
+          setInstagramNote(me.instagramNote);
+        }
+        if (me.fitnessGoal !== undefined && me.fitnessGoal !== null) {
+          setFitnessGoal(me.fitnessGoal);
+        }
+        if (me.notifyChannel === "in_app" || me.notifyChannel === "sms" || me.notifyChannel === "whatsapp") {
+          setNotifyChannel(me.notifyChannel);
+        }
+        if (me.weeklyPlanningDay === "friday" || me.weeklyPlanningDay === "saturday" || me.weeklyPlanningDay === "sunday") {
+          setWeeklyPlanningDay(me.weeklyPlanningDay);
+        }
+        if (me.checkInTime?.trim()) {
+          setCheckInTime(me.checkInTime.trim());
+        }
+      } finally {
+        if (!cancelled) setHydrated(true);
+      }
+    }
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
+
   async function savePatch(data: Record<string, unknown>) {
+    setSaveError(null);
     setPending(true);
     try {
       const response = await fetch("/api/me", {
@@ -52,70 +131,122 @@ export default function OnboardingPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data)
       });
+      const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error("Unable to save.");
+        const msg =
+          typeof payload?.error === "string"
+            ? payload.error
+            : "Unable to save your progress — please try again.";
+        throw new Error(msg);
       }
     } finally {
       setPending(false);
     }
   }
 
+  async function handleBack() {
+    if (step <= 1 || pending) return;
+    const prev = step - 1;
+    const dbStep = prev <= 1 ? 0 : prev;
+    try {
+      await savePatch({ onboardingStep: dbStep });
+      setStep(prev);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Unable to go back.");
+    }
+  }
+
   async function handleNext(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setSaveError(null);
     if (step === 1) {
-      await savePatch({ onboardingStep: 2 });
-      setStep(2);
+      try {
+        await savePatch({ onboardingStep: 2 });
+        setStep(2);
+      } catch (e) {
+        setSaveError(e instanceof Error ? e.message : "Unable to save.");
+      }
       return;
     }
     if (step === 2) {
-      await savePatch({
-        householdName,
-        firstName,
-        role,
-        onboardingStep: 3
-      });
-      setStep(3);
+      try {
+        await savePatch({
+          householdName,
+          firstName,
+          role,
+          onboardingStep: 3
+        });
+        setStep(3);
+      } catch (e) {
+        setSaveError(e instanceof Error ? e.message : "Unable to save.");
+      }
       return;
     }
     if (step === 3) {
-      await savePatch({
-        nemoPersonality: personality,
-        onboardingStep: 4
-      });
-      setStep(4);
+      try {
+        await savePatch({
+          nemoPersonality: personality,
+          onboardingStep: 4
+        });
+        setStep(4);
+      } catch (e) {
+        setSaveError(e instanceof Error ? e.message : "Unable to save.");
+      }
       return;
     }
     if (step === 4) {
-      await savePatch({
-        groceryStoresNote,
-        instagramNote,
-        onboardingStep: 5
-      });
-      setStep(5);
+      try {
+        await savePatch({
+          groceryStoresNote,
+          instagramNote,
+          onboardingStep: 5
+        });
+        setStep(5);
+      } catch (e) {
+        setSaveError(e instanceof Error ? e.message : "Unable to save.");
+      }
       return;
     }
     if (step === 5) {
-      await savePatch({
-        fitnessGoal,
-        onboardingStep: 6
-      });
-      setStep(6);
+      try {
+        await savePatch({
+          fitnessGoal,
+          onboardingStep: 6
+        });
+        setStep(6);
+      } catch (e) {
+        setSaveError(e instanceof Error ? e.message : "Unable to save.");
+      }
       return;
     }
     if (step === 6) {
-      await savePatch({
-        notifyChannel,
-        weeklyPlanningDay,
-        checkInTime,
-        onboardingComplete: true,
-        onboardingStep: 6
-      });
-      router.push("/dashboard");
+      try {
+        await savePatch({
+          notifyChannel,
+          weeklyPlanningDay,
+          checkInTime,
+          onboardingComplete: true,
+          onboardingStep: 6
+        });
+        router.replace("/dashboard");
+      } catch (e) {
+        setSaveError(e instanceof Error ? e.message : "Unable to finish onboarding.");
+      }
     }
+  }
+
+  if (!hydrated) {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center text-sm text-forest-muted">Loading onboarding…</div>
+    );
   }
 
   return (
     <div className="page-fade-in mx-auto max-w-3xl space-y-8">
+      <div className="flex min-h-[40px] items-start">
+        {step > 1 ? <PageBackButton onClick={handleBack} disabled={pending} /> : null}
+      </div>
+
       <header className="space-y-3">
         <p className="text-xs uppercase tracking-[0.3em] text-tan">Onboarding</p>
         <h1 className="font-display text-3xl text-forest">Shape your household experience</h1>
@@ -127,6 +258,12 @@ export default function OnboardingPage() {
           <div className="h-full rounded-full bg-fern transition-all duration-300" style={{ width: `${progress}%` }} />
         </div>
       </header>
+
+      {saveError ? (
+        <p className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
+          {saveError}
+        </p>
+      ) : null}
 
       <form className="space-y-8 rounded-3xl border border-border bg-white p-8 shadow-sm shadow-black/5" onSubmit={handleNext}>
         {step === 1 && (
@@ -304,15 +441,7 @@ export default function OnboardingPage() {
           </section>
         )}
 
-        <div className="flex flex-wrap items-center justify-between gap-4 border-t border-border pt-6">
-          <button
-            type="button"
-            className="text-sm font-semibold text-forest-muted hover:text-forest"
-            onClick={() => setStep((prev) => Math.max(1, prev - 1))}
-            disabled={step === 1 || pending}
-          >
-            Back
-          </button>
+        <div className="flex flex-wrap items-center justify-end gap-4 border-t border-border pt-6">
           <button
             type="submit"
             disabled={pending}

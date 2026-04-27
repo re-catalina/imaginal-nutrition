@@ -77,50 +77,49 @@ export async function PATCH(req: Request) {
 
   const body = parsed.data;
 
-  if (body.householdName) {
-    const existing = await prisma.user.findUnique({
+  const updated = await prisma.$transaction(async (tx) => {
+    const me = await tx.user.findUnique({
       where: { id: auth.userId },
       select: { householdId: true }
     });
 
-    if (existing?.householdId) {
-      await prisma.household.update({
-        where: { id: existing.householdId },
-        data: { name: body.householdName }
-      });
-    } else {
-      const created = await prisma.household.create({
-        data: { name: body.householdName },
-        select: { id: true }
-      });
-      await prisma.user.update({
-        where: { id: auth.userId },
-        data: {
-          householdId: created.id,
-          ...(body.role ? { householdRole: body.role } : {})
-        }
-      });
-    }
-  }
+    let newHouseholdId: string | null = null;
 
-  const updated = await prisma.user.update({
-    where: { id: auth.userId },
-    data: {
-      ...(body.firstName !== undefined ? { name: body.firstName } : {}),
-      ...(body.role !== undefined ? { householdRole: body.role } : {}),
-      ...(body.nemoPersonality !== undefined ? { nemoPersonality: body.nemoPersonality } : {}),
-      ...(body.notifyChannel !== undefined ? { notifyChannel: body.notifyChannel } : {}),
-      ...(body.weeklyPlanningDay !== undefined ? { weeklyPlanningDay: body.weeklyPlanningDay } : {}),
-      ...(body.checkInTime !== undefined ? { checkInTime: body.checkInTime } : {}),
-      ...(body.fitnessGoal !== undefined ? { fitnessGoal: body.fitnessGoal } : {}),
-      ...(body.groceryStoresNote !== undefined ? { groceryStoresNote: body.groceryStoresNote } : {}),
-      ...(body.instagramNote !== undefined ? { instagramNote: body.instagramNote } : {}),
-      ...(body.onboardingStep !== undefined ? { onboardingStep: body.onboardingStep } : {}),
-      ...(body.onboardingComplete !== undefined ? { onboardingComplete: body.onboardingComplete } : {})
-    },
-    include: {
-      household: true
+    if (body.householdName) {
+      if (me?.householdId) {
+        await tx.household.update({
+          where: { id: me.householdId },
+          data: { name: body.householdName }
+        });
+      } else {
+        const created = await tx.household.create({
+          data: { name: body.householdName },
+          select: { id: true }
+        });
+        newHouseholdId = created.id;
+      }
     }
+
+    return tx.user.update({
+      where: { id: auth.userId },
+      data: {
+        ...(newHouseholdId ? { householdId: newHouseholdId } : {}),
+        ...(body.firstName !== undefined ? { name: body.firstName } : {}),
+        ...(body.role !== undefined ? { householdRole: body.role } : {}),
+        ...(body.nemoPersonality !== undefined ? { nemoPersonality: body.nemoPersonality } : {}),
+        ...(body.notifyChannel !== undefined ? { notifyChannel: body.notifyChannel } : {}),
+        ...(body.weeklyPlanningDay !== undefined ? { weeklyPlanningDay: body.weeklyPlanningDay } : {}),
+        ...(body.checkInTime !== undefined ? { checkInTime: body.checkInTime } : {}),
+        ...(body.fitnessGoal !== undefined ? { fitnessGoal: body.fitnessGoal } : {}),
+        ...(body.groceryStoresNote !== undefined ? { groceryStoresNote: body.groceryStoresNote } : {}),
+        ...(body.instagramNote !== undefined ? { instagramNote: body.instagramNote } : {}),
+        ...(body.onboardingStep !== undefined ? { onboardingStep: body.onboardingStep } : {}),
+        ...(body.onboardingComplete !== undefined ? { onboardingComplete: body.onboardingComplete } : {})
+      },
+      include: {
+        household: true
+      }
+    });
   });
 
   return NextResponse.json({

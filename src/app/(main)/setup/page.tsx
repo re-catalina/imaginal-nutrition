@@ -2,6 +2,8 @@
 
 import { FormEvent, useState } from "react";
 
+import { PageBackButton } from "@/components/PageBackButton";
+
 export default function CalorieSetupPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -37,6 +39,7 @@ export default function CalorieSetupPage() {
 
   return (
     <div className="page-fade-in mx-auto max-w-3xl space-y-8">
+      <PageBackButton href="/dashboard" />
       <header>
         <p className="text-xs uppercase tracking-[0.3em] text-tan">Energy budget</p>
         <h1 className="font-display text-3xl text-forest">Calorie & macro setup</h1>
